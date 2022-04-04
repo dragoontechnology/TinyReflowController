@@ -168,7 +168,8 @@ typedef enum DEBOUNCE_STATE
 typedef enum REFLOW_PROFILE
 {
   REFLOW_PROFILE_LEADFREE,
-  REFLOW_PROFILE_LEADED
+  REFLOW_PROFILE_LEADED,
+  REFLOW_PROFILE_TPU
 } reflowProfile_t;
 
 // ***** CONSTANTS *****
@@ -192,6 +193,11 @@ typedef enum REFLOW_PROFILE
 #define TEMPERATURE_SOAK_MAX_PB 180
 #define TEMPERATURE_REFLOW_MAX_PB 224
 #define SOAK_MICRO_PERIOD_PB 10000
+
+// ***** TPU PROFILE CONSTANTS *****
+#define TEMPERATURE_SOAK_MAX_TPU 180
+#define TEMPERATURE_REFLOW_MAX_TPU 224
+#define SOAK_MICRO_PERIOD_TPU 10000
 
 // ***** SWITCH SPECIFIC CONSTANTS *****
 #define DEBOUNCE_PERIOD_MIN 100
@@ -470,9 +476,13 @@ void loop()
     {
 	    lcd.print(F("LF"));
     }
-    else
+    else if (reflowProfile == REFLOW_PROFILE_LEADED)
     {
       lcd.print(F("PB"));
+    }
+    else
+    {
+      lcd.print(F("TPU"));
     }
     lcd.setCursor(0, 1);
     
@@ -501,15 +511,19 @@ void loop()
     oled.setCursor(0, 0);
     oled.print(lcdMessagesReflowStatus[reflowState]);
     oled.setTextSize(1);
-    oled.setCursor(115, 0);
+    oled.setCursor(110, 0);
 
     if (reflowProfile == REFLOW_PROFILE_LEADFREE)
     {
       oled.print(F("LF"));
     }
-    else
+    else if (reflowProfile == REFLOW_PROFILE_LEADED)
     {
       oled.print(F("PB"));
+    }
+    else
+    {
+      oled.print(F("TPU"));
     }
     
     // Temperature markers
@@ -613,11 +627,17 @@ void loop()
             reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_LF;
             soakMicroPeriod = SOAK_MICRO_PERIOD_LF;
           }
-          else
+          else if (reflowProfile == REFLOW_PROFILE_LEADED)
           {
             soakTemperatureMax = TEMPERATURE_SOAK_MAX_PB;
             reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_PB;
             soakMicroPeriod = SOAK_MICRO_PERIOD_PB;
+          }
+          else
+          {
+            soakTemperatureMax = TEMPERATURE_SOAK_MAX_TPU;
+            reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_TPU;
+            soakMicroPeriod = SOAK_MICRO_PERIOD_TPU;
           }
           // Tell the PID to range between 0 and the full window size
           reflowOvenPID.SetOutputLimits(0, windowSize);
@@ -765,6 +785,12 @@ void loop()
         EEPROM.write(PROFILE_TYPE_ADDRESS, 1);
       }
       // Currently using leaded reflow profile
+      else if (reflowProfile == REFLOW_PROFILE_LEADED)
+      {
+        // Switch to TPU profile
+        reflowProfile = REFLOW_PROFILE_TPU;
+        EEPROM.write(PROFILE_TYPE_ADDRESS, 2);
+      }
       else
       {
         // Switch to lead-free profile
