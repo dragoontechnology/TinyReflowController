@@ -1,104 +1,4 @@
-/*******************************************************************************
-  Title: Tiny Reflow Controller
-  Version: 2.00
-  Date: 03-03-2019
-  Company: Rocket Scream Electronics
-  Author: Lim Phang Moh
-  Website: www.rocketscream.com
-
-  Brief
-  =====
-  This is an example firmware for our Arduino compatible Tiny Reflow Controller.
-  A big portion of the code is copied over from our Reflow Oven Controller
-  Shield. We added both lead-free and leaded reflow profile support in this
-  firmware which can be selected by pressing switch #2 (labelled as LF|PB on PCB)
-  during system idle. The unit will remember the last selected reflow profile.
-  You'll need to use the MAX31856 library for Arduino.
-
-  Lead-Free Reflow Curve
-  ======================
-
-  Temperature (Degree Celcius)                 Magic Happens Here!
-  245-|                                               x  x
-      |                                            x        x
-      |                                         x              x
-      |                                      x                    x
-  200-|                                   x                          x
-      |                              x    |                          |   x
-      |                         x         |                          |       x
-      |                    x              |                          |
-  150-|               x                   |                          |
-      |             x |                   |                          |
-      |           x   |                   |                          |
-      |         x     |                   |                          |
-      |       x       |                   |                          |
-      |     x         |                   |                          |
-      |   x           |                   |                          |
-  30 -| x             |                   |                          |
-      |<  60 - 90 s  >|<    90 - 120 s   >|<       90 - 120 s       >|
-      | Preheat Stage |   Soaking Stage   |       Reflow Stage       | Cool
-   0  |_ _ _ _ _ _ _ _|_ _ _ _ _ _ _ _ _ _|_ _ _ _ _ _ _ _ _ _ _ _ _ |_ _ _ _ _
-                                                                 Time (Seconds)
-
-  Leaded Reflow Curve (Kester EP256)
-  ==================================
-
-  Temperature (Degree Celcius)         Magic Happens Here!
-  219-|                                       x  x
-      |                                    x        x
-      |                                 x              x
-  180-|                              x                    x
-      |                         x    |                    |   x
-      |                    x         |                    |       x
-  150-|               x              |                    |           x
-      |             x |              |                    |
-      |           x   |              |                    |
-      |         x     |              |                    |
-      |       x       |              |                    |
-      |     x         |              |                    |
-      |   x           |              |                    |
-  30 -| x             |              |                    |
-      |<  60 - 90 s  >|<  60 - 90 s >|<   60 - 90 s      >|
-      | Preheat Stage | Soaking Stage|   Reflow Stage     | Cool
-   0  |_ _ _ _ _ _ _ _|_ _ _ _ _ _ _ |_ _ _ _ _ _ _ _ _ _ |_ _ _ _ _ _ _ _ _ _ _
-                                                                 Time (Seconds)
-
-  This firmware owed very much on the works of other talented individuals as
-  follows:
-  ==========================================
-  Brett Beauregard (www.brettbeauregard.com)
-  ==========================================
-  Author of Arduino PID library. On top of providing industry standard PID
-  implementation, he gave a lot of help in making this reflow oven controller
-  possible using his awesome library.
-
-  ==========================================
-  Limor Fried of Adafruit (www.adafruit.com)
-  ==========================================
-  Author of Arduino MAX31856 and SSD1306 libraries. Adafruit has been the source 
-  of tonnes of tutorials, examples, and libraries for everyone to learn.
-
-  ==========================================
-  Spence Konde (www.drazzy.com/e/)
-  ==========================================
-  Maintainer of the ATtiny core for Arduino:
-  https://github.com/SpenceKonde/ATTinyCore
-
-  Disclaimer
-  ==========
-  Dealing with high voltage is a very dangerous act! Please make sure you know
-  what you are dealing with and have proper knowledge before hand. Your use of
-  any information or materials on this Tiny Reflow Controller is entirely at
-  your own risk, for which we shall not be liable.
-
-  Licences
-  ========
-  This Tiny Reflow Controller hardware and firmware are released under the
-  Creative Commons Share Alike v3.0 license
-  http://creativecommons.org/licenses/by-sa/3.0/
-  You are free to take this piece of code, use it and modify it.
-  All we ask is attribution including the supporting libraries used in this
-  firmware.
+/**
 
   Required Libraries
   ==================
@@ -117,11 +17,8 @@
             - select the arduino board “Tools” -> “Board” -> “Arduino Pro or Pro Mini”
             - Based on ATMega328P 3.3V @ 8MHz
             - Uses SSD1306 128x64 OLED
-  1.00      Initial public release:
-            - Based on ATtiny1634R 3.3V @ 8MHz
-            - Uses 8x2 alphanumeric LCD
 
-*******************************************************************************/
+**/
 
 // ***** INCLUDES *****
 #include <SPI.h>
@@ -139,7 +36,8 @@ typedef enum REFLOW_STATE
   REFLOW_STATE_IDLE,
   REFLOW_STATE_PREHEAT,
   REFLOW_STATE_SOAK,
-  REFLOW_STATE_REFLOW,
+  REFLOW_STATE_REFLOW,  
+  REFLOW_STATE_HOLD,
   REFLOW_STATE_COOL,
   REFLOW_STATE_COMPLETE,
   REFLOW_STATE_TOO_HOT,
@@ -184,26 +82,10 @@ typedef enum REFLOW_PROFILE
 #define TEMPERATURE_COOL_MIN 100
 #define SENSOR_SAMPLING_TIME 1000
 #define SOAK_TEMPERATURE_STEP 5
-
-// ***** LEAD FREE PROFILE CONSTANTS *****
-#define TEMPERATURE_SOAK_MAX_LF 190
-#define TEMPERATURE_REFLOW_MAX_LF 250
-#define SOAK_MICRO_PERIOD_LF 12000
-#define REFLOW_MICRO_PERIOD_LF 1000
-
-// ***** LEADED PROFILE CONSTANTS *****
-#define TEMPERATURE_SOAK_MAX_PB 180
-#define TEMPERATURE_REFLOW_MAX_PB 224
-#define SOAK_MICRO_PERIOD_PB 10000
-#define REFLOW_MICRO_PERIOD_PB 1000
-
-
-// ***** TPU PROFILE CONSTANTS *****
-#define TEMPERATURE_SOAK_MAX_TPU 210
-#define TEMPERATURE_REFLOW_MAX_TPU 254
-#define SOAK_MICRO_PERIOD_TPU 9000
-#define REFLOW_MICRO_PERIOD_TPU 100
-
+#define TEMPERATURE_SOAK_MAX 190
+#define TEMPERATURE_REFLOW_MAX 250
+#define SOAK_PERIOD 12000
+#define REFLOW_PERIOD 30000
 
 // ***** SWITCH SPECIFIC CONSTANTS *****
 #define DEBOUNCE_PERIOD_MIN 100
@@ -288,7 +170,7 @@ unsigned long timerSoak;
 unsigned long buzzerPeriod;
 unsigned char soakTemperatureMax;
 unsigned char reflowTemperatureMax;
-unsigned long soakMicroPeriod;
+unsigned long soakPeriod = 60000;
 unsigned long reflowTimer = 0;
 unsigned long reflowPeriod;
 // Reflow oven controller state machine state variable
@@ -309,6 +191,7 @@ switch_t switchMask;
 unsigned int timerSeconds;
 // Thermocouple fault status
 unsigned char fault;
+bool atReflowTemp = false;
 #ifdef VERSION == 2
 unsigned int timerUpdate;
 unsigned char temperature[SCREEN_WIDTH - X_AXIS_START];
@@ -328,20 +211,6 @@ Adafruit_MAX31856 thermocouple = Adafruit_MAX31856(thermocoupleCSPin);
 
 void setup()
 {
-  // Check current selected reflow profile
-  unsigned char value = EEPROM.read(PROFILE_TYPE_ADDRESS);
-  if ((value == 0) || (value == 1) || (value == 2))
-  {
-    // Valid reflow profile value
-    reflowProfile = value;
-  }
-  else
-  {
-    // Default to lead-free profile
-    EEPROM.write(PROFILE_TYPE_ADDRESS, 0);
-    reflowProfile = REFLOW_PROFILE_LEADFREE;
-  }
-
   // SSR pin initialization to ensure reflow oven is off
   digitalWrite(ssrPin, LOW);
   pinMode(ssrPin, OUTPUT);
@@ -388,7 +257,7 @@ void setup()
   oled.println(F("     Tiny Reflow"));
   oled.println(F("     Controller"));
   oled.println();
-  oled.println(F("       v2.02"));
+  oled.println(F("       Dragoon v0.1"));
   oled.println();
   oled.println(F("      05-03-22"));
   oled.display();
@@ -593,7 +462,7 @@ void loop()
 #endif
   }
 
-  // Reflow oven controller state machine
+  /////////////////////////////////////////////////////////////////////////////// Reflow oven controller state machine/////////////////////////////////////////////////////////
   switch (reflowState)
   {
     case REFLOW_STATE_IDLE:
@@ -628,28 +497,11 @@ void loop()
           windowStartTime = millis();
           // Ramp up to minimum soaking temperature
           setpoint = TEMPERATURE_SOAK_MIN;
-          // Load profile specific constant
-          if (reflowProfile == REFLOW_PROFILE_LEADFREE)
-          {
-            soakTemperatureMax = TEMPERATURE_SOAK_MAX_LF;
-            reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_LF;
-            soakMicroPeriod = SOAK_MICRO_PERIOD_LF;
-            reflowPeriod = 1000;
-          }
-          else if (reflowProfile == REFLOW_PROFILE_LEADED)
-          {
-            soakTemperatureMax = TEMPERATURE_SOAK_MAX_PB;
-            reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_PB;
-            soakMicroPeriod = SOAK_MICRO_PERIOD_PB;
-            reflowPeriod = 1000;
-          }
-          else
-          {
-            soakTemperatureMax = TEMPERATURE_SOAK_MAX_TPU;
-            reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_TPU;
-            soakMicroPeriod = SOAK_MICRO_PERIOD_TPU;
-            reflowPeriod = 1000;
-          }
+          // Load profile  constant
+          soakTemperatureMax = TEMPERATURE_SOAK_MAX;
+          reflowTemperatureMax = TEMPERATURE_REFLOW_MAX;
+          soakPeriod = SOAK_PERIOD;
+          reflowPeriod = REFLOW_PERIOD;
           // Tell the PID to range between 0 and the full window size
           reflowOvenPID.SetOutputLimits(0, windowSize);
           reflowOvenPID.SetSampleTime(PID_SAMPLE_TIME);
@@ -666,12 +518,12 @@ void loop()
       // If minimum soak temperature is achieve
       if (ovenTemp >= TEMPERATURE_SOAK_MIN)
       {
-        // Chop soaking period into smaller sub-period
-        timerSoak = millis() + soakMicroPeriod;
+        // find out when we can end the soak period
+        timerSoak = millis() + soakPeriod;
         // Set less agressive PID parameters for soaking ramp
         reflowOvenPID.SetTunings(PID_KP_SOAK, PID_KI_SOAK, PID_KD_SOAK);
-        // Ramp up to first section of soaking temperature
-        setpoint = TEMPERATURE_SOAK_MIN + SOAK_TEMPERATURE_STEP;
+        // set soak temp
+        setpoint = TEMPERATURE_SOAK_MAX;
         // Proceed to soaking state
         reflowState = REFLOW_STATE_SOAK;
       }
@@ -681,33 +533,34 @@ void loop()
       // If micro soak temperature is achieved
       if (millis() > timerSoak)
       {
-        timerSoak = millis() + soakMicroPeriod;
-        // Increment micro setpoint
-        setpoint += SOAK_TEMPERATURE_STEP;
-        if (setpoint > soakTemperatureMax)
-        {
-          // Set agressive PID parameters for reflow ramp
-          reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
-          // Ramp up to first section of soaking temperature
-          setpoint = reflowTemperatureMax;
-          // Proceed to reflowing state
-          reflowState = REFLOW_STATE_REFLOW;
-          reflowTimer = timerSeconds + 30;
-        }
+        // Set agressive PID parameters for reflow ramp
+        reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
+        // Ramp up to first section of soaking temperature
+        setpoint = reflowTemperatureMax;
+        // Proceed to reflowing state
+        reflowState = REFLOW_STATE_REFLOW;
       }
       break;
 
     case REFLOW_STATE_REFLOW:
-    
-      // We need to avoid hovering at peak temperature for too long
-      // Crude method that works like a charm and safe for the components
+        
+      //check to see if we have gotten to temp
       if ((ovenTemp >= (reflowTemperatureMax - 5)))// && (timerSeconds > reflowTimer))
       {
+      // Proceed to hold state
+      reflowState = REFLOW_STATE_HOLD;
+      reflowTimer = millis() + reflowPeriod;
+      }
+      break;
+
+    case REFLOW_STATE_HOLD:
+
+      if (1000000 <= millis())
+      {      
         // Set PID parameters for cooling ramp
         reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
         // Ramp down to minimum cooling temperature
         setpoint = TEMPERATURE_COOL_MIN;
-        // Proceed to cooling state
         reflowState = REFLOW_STATE_COOL;
       }
       break;
@@ -723,54 +576,17 @@ void loop()
         // Turn off reflow process
         reflowStatus = REFLOW_STATUS_OFF;
         // Proceed to reflow Completion state
-        reflowState = REFLOW_STATE_COMPLETE;
-      }
-      break;
-
-    case REFLOW_STATE_COMPLETE:
-      if (millis() > buzzerPeriod)
-      {
-        // Turn off buzzer
-        digitalWrite(buzzerPin, LOW);
-        // Reflow process ended
-        reflowState = REFLOW_STATE_IDLE;
-      }
-      break;
-
-    case REFLOW_STATE_TOO_HOT:
-      // If oven temperature drops below room temperature
-      if (ovenTemp < TEMPERATURE_ROOM)
-      {
-        // Ready to reflow
-        reflowState = REFLOW_STATE_IDLE;
-      }
-      break;
-
-    case REFLOW_STATE_ERROR:
-      // Check for thermocouple fault
-      fault = thermocouple.readFault();
-
-      // If thermocouple problem is still present
-      if ((fault & MAX31856_FAULT_CJRANGE) ||
-          (fault & MAX31856_FAULT_TCRANGE) ||
-          (fault & MAX31856_FAULT_CJHIGH) ||
-          (fault & MAX31856_FAULT_CJLOW) ||
-          (fault & MAX31856_FAULT_TCHIGH) ||
-          (fault & MAX31856_FAULT_TCLOW) ||
-          (fault & MAX31856_FAULT_OVUV) ||
-          (fault & MAX31856_FAULT_OPEN))
-      {
-        // Wait until thermocouple wire is connected
-        reflowState = REFLOW_STATE_ERROR;
-      }
-      else
-      {
-        // Clear to perform reflow process
         reflowState = REFLOW_STATE_IDLE;
       }
       break;
   }
 
+
+
+
+
+
+///////////////////////////////////////////////////////////////switch stuff////////////////////////////////////////////////////////////////////////////
   // If switch 1 is pressed
   if (switchStatus == SWITCH_1)
   {
