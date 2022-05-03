@@ -114,6 +114,7 @@
   Revision  Description
   ========  ===========
   2.00      Support V2 of the Tiny Reflow Controller:
+            - select the arduino board “Tools” -> “Board” -> “Arduino Pro or Pro Mini”
             - Based on ATMega328P 3.3V @ 8MHz
             - Uses SSD1306 128x64 OLED
   1.00      Initial public release:
@@ -187,17 +188,22 @@ typedef enum REFLOW_PROFILE
 // ***** LEAD FREE PROFILE CONSTANTS *****
 #define TEMPERATURE_SOAK_MAX_LF 200
 #define TEMPERATURE_REFLOW_MAX_LF 250
-#define SOAK_MICRO_PERIOD_LF 9000
+#define SOAK_MICRO_PERIOD_LF 12000
+#define REFLOW_MICRO_PERIOD_LF 1000
 
 // ***** LEADED PROFILE CONSTANTS *****
 #define TEMPERATURE_SOAK_MAX_PB 180
 #define TEMPERATURE_REFLOW_MAX_PB 224
 #define SOAK_MICRO_PERIOD_PB 10000
+#define REFLOW_MICRO_PERIOD_PB 1000
+
 
 // ***** TPU PROFILE CONSTANTS *****
 #define TEMPERATURE_SOAK_MAX_TPU 210
 #define TEMPERATURE_REFLOW_MAX_TPU 254
 #define SOAK_MICRO_PERIOD_TPU 9000
+#define REFLOW_MICRO_PERIOD_TPU 100
+
 
 // ***** SWITCH SPECIFIC CONSTANTS *****
 #define DEBOUNCE_PERIOD_MIN 100
@@ -283,8 +289,10 @@ unsigned long buzzerPeriod;
 unsigned char soakTemperatureMax;
 unsigned char reflowTemperatureMax;
 unsigned long soakMicroPeriod;
+unsigned long reflowTimer = 0;
+unsigned long reflowPeriod;
 // Reflow oven controller state machine state variable
-reflowState_t reflowState;
+reflowState_t reflowState = REFLOW_STATE_IDLE;
 // Reflow oven controller status
 reflowStatus_t reflowStatus;
 // Reflow profile type
@@ -380,9 +388,9 @@ void setup()
   oled.println(F("     Tiny Reflow"));
   oled.println(F("     Controller"));
   oled.println();
-  oled.println(F("       v2.00"));
+  oled.println(F("       v2.02"));
   oled.println();
-  oled.println(F("      04-03-19"));
+  oled.println(F("      05-03-22"));
   oled.display();
   delay(3000);
   oled.clearDisplay();
@@ -626,18 +634,21 @@ void loop()
             soakTemperatureMax = TEMPERATURE_SOAK_MAX_LF;
             reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_LF;
             soakMicroPeriod = SOAK_MICRO_PERIOD_LF;
+            reflowPeriod = 1000;
           }
           else if (reflowProfile == REFLOW_PROFILE_LEADED)
           {
             soakTemperatureMax = TEMPERATURE_SOAK_MAX_PB;
             reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_PB;
             soakMicroPeriod = SOAK_MICRO_PERIOD_PB;
+            reflowPeriod = 1000;
           }
           else
           {
             soakTemperatureMax = TEMPERATURE_SOAK_MAX_TPU;
             reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_TPU;
             soakMicroPeriod = SOAK_MICRO_PERIOD_TPU;
+            reflowPeriod = 1000;
           }
           // Tell the PID to range between 0 and the full window size
           reflowOvenPID.SetOutputLimits(0, windowSize);
@@ -681,21 +692,26 @@ void loop()
           setpoint = reflowTemperatureMax;
           // Proceed to reflowing state
           reflowState = REFLOW_STATE_REFLOW;
+          reflowTimer = millis() + 1000;
         }
       }
       break;
 
     case REFLOW_STATE_REFLOW:
+    
       // We need to avoid hovering at peak temperature for too long
       // Crude method that works like a charm and safe for the components
       if (input >= (reflowTemperatureMax - 5))
       {
+        if(false)//millis() > 100)
+        {
         // Set PID parameters for cooling ramp
         reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
         // Ramp down to minimum cooling temperature
         setpoint = TEMPERATURE_COOL_MIN;
         // Proceed to cooling state
         reflowState = REFLOW_STATE_COOL;
+        }
       }
       break;
 
