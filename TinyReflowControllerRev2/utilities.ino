@@ -213,6 +213,10 @@ float PID::calculate(float value, float setpoint){
   float _D;
   float command = 0.0;
   float deltaTime = float(millis() - _lastTime) / 1000.0;
+  //protect against divide by zero
+  if (deltaTime <= 0.0){
+    deltaTime = 0.00000000001;
+  }
   float error = setpoint - value;
 
   _Prop = KP * error;
@@ -221,7 +225,7 @@ float PID::calculate(float value, float setpoint){
   }// don't iterate I if deltaTime is too big.  Otherwise the first run can be large.
 
   I = constrain(I, min, max);
-  _D = KD * (1/deltaTime) * (_lastValue - value);
+  _D = KD * (1.0/deltaTime) * (_lastValue - value);
 
   command = constrain(_Prop+I+_D, min, max);
   _lastValue = value;

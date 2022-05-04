@@ -24,8 +24,8 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <EEPROM.h>
-#include <Adafruit_GFX.h>      // Comment for VERSION 1
-#include <Adafruit_SSD1306.h>  // Comment for VERSION 1 
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <Adafruit_MAX31856.h> 
 #include "utilities.h"
 
@@ -63,31 +63,11 @@ typedef enum DEBOUNCE_STATE
   DEBOUNCE_STATE_RELEASE
 } debounceState_t;
 
-
-
-// ***** CONSTANTS *****
-// ***** GENERAL *****
-
 // ***** SWITCH SPECIFIC CONSTANTS *****
 #define DEBOUNCE_PERIOD_MIN 100
 
 // ***** DISPLAY SPECIFIC CONSTANTS *****
 #define UPDATE_RATE 100
-
-// ***** PID PARAMETERS *****
-// ***** PRE-HEAT STAGE *****
-#define PID_KP_PREHEAT 100
-#define PID_KI_PREHEAT 0.025
-#define PID_KD_PREHEAT 20
-// ***** SOAKING STAGE *****
-#define PID_KP_SOAK 300
-#define PID_KI_SOAK 0.05
-#define PID_KD_SOAK 250
-// ***** REFLOW STAGE *****
-#define PID_KP_REFLOW 300
-#define PID_KI_REFLOW 0.05
-#define PID_KD_REFLOW 350
-#define PID_SAMPLE_TIME 1000
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -96,10 +76,11 @@ typedef enum DEBOUNCE_STATE
 
 // ***** LCD MESSAGES *****
 const char* lcdMessagesReflowStatus[] = {
-  "Ready",
+  "Idle",
   "Pre",
   "Soak",
-  "Reflow",
+  "Flow",
+  "Hold",
   "Cool",
   "Done!",
   "Hot!",
@@ -113,28 +94,29 @@ unsigned char degree[8]  = {
 
 // ***** PIN ASSIGNMENT *****
 
-unsigned char ssrPin = A0;
-unsigned char fanPin = A1;
-unsigned char thermocoupleCSPin = 10;
-unsigned char ledPin = 4;
-unsigned char buzzerPin = 5;
-unsigned char switchStartStopPin = 3;
-unsigned char switch2pin = 2;
+const unsigned char ssrPin = A0;
+const unsigned char fanPin = A1;
+const unsigned char thermocoupleCSPin = 10;
+const unsigned char ledPin = 4;
+const unsigned char buzzerPin = 5;
+const unsigned char switchStartStopPin = 3;
+const unsigned char switch2pin = 2;
 
 
 // ***** PID CONTROL VARIABLES *****
-float preheatTemp = 150;
-float soakTemp = 180;
-float reflowTemp = 250;
-float coolTemp = 100;
-unsigned long soakPeriod = 120000;
-unsigned long reflowPeriod = 30000;
-double setpoint = 0;
-float ovenTemp = 0;
-double kp = PID_KP_PREHEAT;
-double ki = PID_KI_PREHEAT;
-double kd = PID_KD_PREHEAT;
-float command = 0;
+const float preheatTemp = 150.0;
+const float soakTemp = 175.0;
+float tempCmd = 0.0;
+const float reflowTemp = 250.0;
+const float coolTemp = 100.0;
+const unsigned long soakPeriod = 120000;
+const unsigned long reflowPeriod = 40000;
+float ovenTemp = 0.0;
+float kp = 9.0;
+float ki = 0.0;
+float kd = 190.0;
+float command = 0.0;
+float setTemp = 0.0;
 unsigned long nextRead;
 unsigned long updateLcd;
 unsigned long timer;
@@ -163,7 +145,7 @@ unsigned char x;
 
 
 // PID control interface
-PID ovenPID(kp, ki, kd);
+PID ovenPID(kp, ki, kd,0.0,255);
 
 Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
@@ -194,7 +176,7 @@ void setup()
   oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   oled.display();
   digitalWrite(buzzerPin, LOW);
-  delay(2000);
+  delay(500);
 
   oled.clearDisplay();
   oled.setTextSize(1);
@@ -203,11 +185,11 @@ void setup()
   oled.println(F("     Tiny Reflow"));
   oled.println(F("     Controller"));
   oled.println();
-  oled.println(F("       Dragoon v1.0"));
+  oled.println(F("     Dragoon v1.1"));
   oled.println();
   oled.println(F("      05-03-22"));
   oled.display();
-  delay(3000);
+  delay(1000);
   oled.clearDisplay();
 
   // Serial communication at 115200 bps
@@ -238,47 +220,57 @@ void loop()
   switch (reflowState)
   {
     case REFLOW_STATE_IDLE:
-        command = ovenPID.calculate(ovenTemp,0); //turn off the oven
-        // If switch is pressed to start reflow process
-        if (switchStatus == SWITCH_1)
+      setTemp = 0.0; //turn off the oven
+      // If switch is pressed to start reflow process
+      if (switchStatus == SWITCH_1)
+      {
+        // Send header for CSV file
+        Serial.println(F("Time,Setpoint,ovenTemp,Output"));
+        // Intialize seconds timer for serial debug information
+        timerSeconds = 0;
+        
+        // Initialize reflow plot update timer
+        timerUpdate = 0;
+        
+        for (x = 0; x < (SCREEN_WIDTH - X_AXIS_START); x++)
         {
-          // Send header for CSV file
-          Serial.println(F("Time,Setpoint,ovenTemp,Output"));
-          // Intialize seconds timer for serial debug information
-          timerSeconds = 0;
-          
-          // Initialize reflow plot update timer
-          timerUpdate = 0;
-          
-          for (x = 0; x < (SCREEN_WIDTH - X_AXIS_START); x++)
-          {
-            temperature[x] = 0;
-          }
-          // Initialize index for average temperature array used for reflow plot
-          x = 0;
-          
-          // Proceed to preheat stage
-          reflowState = REFLOW_STATE_PREHEAT;
+          temperature[x] = 0;
         }
+        // Initialize index for average temperature array used for reflow plot
+        x = 0;
+        // Retrieve current time for buzzer usage
+        buzzerPeriod = millis() + 500;
+        // Turn on buzzer to indicate start of reflow process
+        digitalWrite(buzzerPin, HIGH);
+        // Proceed to preheat stage
+        reflowState = REFLOW_STATE_PREHEAT;
+        ovenPID.I = 0.0; //reset integral term
+      }
   
       break;
 
     case REFLOW_STATE_PREHEAT:
-      command = ovenPID.calculate(ovenTemp,preheatTemp);
+      setTemp = preheatTemp;
       reflowStatus = REFLOW_STATUS_ON;
       // If minimum soak temperature is achieve
-      if (ovenTemp >= soakTemp)
+      if (ovenTemp >= (preheatTemp - 5.0))
       {
         // find out when we can end the soak period
         timer = millis() + soakPeriod;
         // Proceed to soaking state
         reflowState = REFLOW_STATE_SOAK;
+        //get ready for next phase of slow heating
+        setTemp = preheatTemp;
       }
       break;
 
     case REFLOW_STATE_SOAK:
-      command = ovenPID.calculate(ovenTemp,soakTemp);
-      // If micro soak temperature is achieved
+    //slowly ish ramp up the temp command to the soak temp
+      if (setTemp < soakTemp)
+      {
+        setTemp += 0.004;
+      } 
+      // if we have soaked for enough time
       if (millis() > timer)
       {
         // Proceed to reflowing state
@@ -287,9 +279,9 @@ void loop()
       break;
 
     case REFLOW_STATE_REFLOW:
-      command = ovenPID.calculate(ovenTemp,reflowTemp);
+      setTemp = reflowTemp;
       //check to see if we have gotten to temp
-      if ((ovenTemp >= (reflowTemp - 5)))
+      if ((ovenTemp >= (reflowTemp - 5.0)))
       {
       // Proceed to hold state
       reflowState = REFLOW_STATE_HOLD;
@@ -298,20 +290,27 @@ void loop()
       break;
 
     case REFLOW_STATE_HOLD:
-      command = ovenPID.calculate(ovenTemp,reflowTemp);
+    //keep the oven at the reflow temp
+      setTemp = reflowTemp;
+      //if we have held for long enough
       if (millis() > timer)
-      {      
+      { 
+        // Retrieve current time for buzzer usage
+        buzzerPeriod = millis() + 1000;
+        // Turn on buzzer to indicate start of reflow process
+        digitalWrite(buzzerPin, HIGH);
+        //proceed to cool state
         reflowState = REFLOW_STATE_COOL;
       }
       break;
 
     case REFLOW_STATE_COOL:
-      command = ovenPID.calculate(ovenTemp,0); //turn off the oven
+      setTemp = 0; //turn off the oven
       // If minimum cool temperature is achieve
       if (ovenTemp <= coolTemp)
       {
         // Retrieve current time for buzzer usage
-        buzzerPeriod = millis() + 1000;
+        buzzerPeriod = millis() + 2000;
         // Turn on buzzer to indicate completion
         digitalWrite(buzzerPin, HIGH);
         // Turn off reflow process
@@ -404,12 +403,20 @@ void loop()
   ////////////////////////////////////////////////////////////////// PID computation and SSR control  //////////////////////////////////////////////////////////////////
   if (reflowStatus == REFLOW_STATUS_ON)
   {
-    analogWrite(ssrPin, map(command,0,1000,0,255)); //this pin might not have pwm capabilities, may need to bit bang something
+    command = ovenPID.calculate(ovenTemp,setTemp);
+    analogWrite(ssrPin, command);
+
   }
   // Reflow oven process is off, ensure oven is off
   else
   {
     digitalWrite(ssrPin, LOW);
+  }
+
+  //turn off the buzzer when done
+  if(buzzerPeriod < millis())
+  {
+    digitalWrite(buzzerPin, LOW);
   }
 }
 
@@ -428,7 +435,7 @@ void secondLoop(void)
     // Read thermocouple next sampling period
     nextRead += 1000;
     // Read current temperature
-    ovenTemp = thermocouple.readThermocoupleTemperature();
+    ovenTemp = IIRfilterf(thermocouple.readThermocoupleTemperature(),ovenTemp,90);
     // Check for thermocouple fault
     fault = thermocouple.readFault();
     // If reflow process is on going
@@ -441,11 +448,12 @@ void secondLoop(void)
       // Send temperature and time stamp to serial
       Serial.print(timerSeconds);
       Serial.print(F(","));
-      Serial.print(setpoint);
-      Serial.print(F(","));
+      Serial.print(setTemp);
+      Serial.print(F(","));   
       Serial.print(ovenTemp);
-      Serial.print(F(","));
+      Serial.print(F(","));      
       Serial.println(command);
+
     }
     else
     {
@@ -477,9 +485,13 @@ void updateLCD(void)
     oled.setCursor(0, 0);
     oled.print(lcdMessagesReflowStatus[reflowState]);
     oled.setTextSize(1);
-    oled.setCursor(110, 0);
-
-      oled.print(F("GOON"));
+    // Right align temperature reading
+    if (setTemp < 10) oled.setCursor(106, 0);
+    else if (setTemp < 100) oled.setCursor(100,0);
+    else oled.setCursor(94, 0);
+    oled.print(((int)setTemp));
+    oled.print((char)247);
+    oled.print(F("C"));
 
     
     // Temperature markers
@@ -510,15 +522,18 @@ void updateLCD(void)
       oled.print(ovenTemp);
       oled.print((char)247);
       oled.print(F("C"));
+
     }
     
     if (reflowStatus == REFLOW_STATUS_ON)
     {
+      oled.setCursor(110, 50);
+      oled.print(timerSeconds);
       // We are updating the display faster than sensor reading
       if (timerSeconds > timerUpdate)
       {
         // Store temperature reading every 3 s
-        if ((timerSeconds % 3) == 0)
+        if ((timerSeconds % 5) == 0)
         {
           timerUpdate = timerSeconds;
           unsigned char averageReading = map(ovenTemp, 0, 250, 63, 19);
@@ -526,6 +541,7 @@ void updateLCD(void)
           {
             temperature[x++] = averageReading;
           }
+
         }
       }
     }
