@@ -215,7 +215,7 @@ float PID::calculate(float value, float setpoint){
   float deltaTime = float(millis() - _lastTime) / 1000.0;
   //protect against divide by zero
   if (deltaTime <= 0.0){
-    deltaTime = 0.00000000001;
+    deltaTime = 0.00000001;
   }
   float error = setpoint - value;
 

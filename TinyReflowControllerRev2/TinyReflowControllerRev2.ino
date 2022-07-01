@@ -2,8 +2,6 @@
 
   Required Libraries
   ==================
-  - Arduino PID Library:
-    >> https://github.com/br3ttb/Arduino-PID-Library
   - Adafruit MAX31856 Library:
     >> https://github.com/adafruit/Adafruit_MAX31856
   - Adafruit SSD1306 Library:
@@ -104,17 +102,18 @@ const unsigned char switch2pin = 2;
 
 
 // ***** PID CONTROL VARIABLES *****
+const float soakTemp = 180.0;
 const float preheatTemp = 150.0;
-const float soakTemp = 175.0;
 float tempCmd = 0.0;
-const float reflowTemp = 250.0;
+const float reflowTemp = 230.0;
+const float holdTemp = 217.0;
 const float coolTemp = 100.0;
-const unsigned long soakPeriod = 120000;
-const unsigned long reflowPeriod = 40000;
+const unsigned long soakPeriod = 100000;
+const unsigned long reflowPeriod = 110000;
 float ovenTemp = 0.0;
-float kp = 9.0;
-float ki = 0.0;
-float kd = 190.0;
+float kp = 5.0;
+float ki = 0.005;
+float kd = 250.0;
 float command = 0.0;
 float setTemp = 0.0;
 unsigned long nextRead;
@@ -185,11 +184,11 @@ void setup()
   oled.println(F("     Tiny Reflow"));
   oled.println(F("     Controller"));
   oled.println();
-  oled.println(F("     Dragoon v1.1"));
+  oled.println(F("     Dragoon v1.4"));
   oled.println();
-  oled.println(F("      05-03-22"));
+  oled.println(F("      07-01-22"));
   oled.display();
-  delay(1000);
+  delay(2000);
   oled.clearDisplay();
 
   // Serial communication at 115200 bps
@@ -255,6 +254,10 @@ void loop()
       // If minimum soak temperature is achieve
       if (ovenTemp >= (preheatTemp - 5.0))
       {
+                // Retrieve current time for buzzer usage
+        buzzerPeriod = millis() + 150;
+        // Turn on buzzer to indicate completion
+        digitalWrite(buzzerPin, HIGH);
         // find out when we can end the soak period
         timer = millis() + soakPeriod;
         // Proceed to soaking state
@@ -273,6 +276,10 @@ void loop()
       // if we have soaked for enough time
       if (millis() > timer)
       {
+                // Retrieve current time for buzzer usage
+        buzzerPeriod = millis() + 150;
+        // Turn on buzzer to indicate completion
+        digitalWrite(buzzerPin, HIGH);
         // Proceed to reflowing state
         reflowState = REFLOW_STATE_REFLOW;
       }
@@ -281,8 +288,12 @@ void loop()
     case REFLOW_STATE_REFLOW:
       setTemp = reflowTemp;
       //check to see if we have gotten to temp
-      if ((ovenTemp >= (reflowTemp - 5.0)))
+      if (ovenTemp >= holdTemp)
       {
+                // Retrieve current time for buzzer usage
+        buzzerPeriod = millis() + 150;
+        // Turn on buzzer to indicate completion
+        digitalWrite(buzzerPin, HIGH);
       // Proceed to hold state
       reflowState = REFLOW_STATE_HOLD;
       timer = millis() + reflowPeriod;
@@ -296,9 +307,11 @@ void loop()
       if (millis() > timer)
       { 
         // Retrieve current time for buzzer usage
-        buzzerPeriod = millis() + 1000;
+        buzzerPeriod = millis() + 5000;
         // Turn on buzzer to indicate start of reflow process
         digitalWrite(buzzerPin, HIGH);
+        // Turn off reflow process
+        reflowStatus = REFLOW_STATUS_OFF;
         //proceed to cool state
         reflowState = REFLOW_STATE_COOL;
       }
@@ -310,7 +323,7 @@ void loop()
       if (ovenTemp <= coolTemp)
       {
         // Retrieve current time for buzzer usage
-        buzzerPeriod = millis() + 2000;
+        buzzerPeriod = millis() + 5000;
         // Turn on buzzer to indicate completion
         digitalWrite(buzzerPin, HIGH);
         // Turn off reflow process
@@ -435,7 +448,7 @@ void secondLoop(void)
     // Read thermocouple next sampling period
     nextRead += 1000;
     // Read current temperature
-    ovenTemp = IIRfilterf(thermocouple.readThermocoupleTemperature(),ovenTemp,90);
+    ovenTemp = thermocouple.readThermocoupleTemperature();//IIRfilterf(thermocouple.readThermocoupleTemperature(),ovenTemp,75);
     // Check for thermocouple fault
     fault = thermocouple.readFault();
     // If reflow process is on going
