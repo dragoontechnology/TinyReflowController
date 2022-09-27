@@ -105,11 +105,11 @@ const unsigned char switch2pin = 2;
 const float soakTemp = 180.0;
 const float preheatTemp = 150.0;
 float tempCmd = 0.0;
-const float reflowTemp = 235.0;
-const float holdTemp = 225.0;
+const float reflowTemp = 240.0;
+const float holdTemp = 230.0;
 const float coolTemp = 100.0;
 const unsigned long soakPeriod = 100000;
-const unsigned long reflowPeriod = 120000;
+const unsigned long reflowPeriod = 110000;
 float ovenTemp = 0.0;
 float kp = 5.0;
 float ki = 0.0047;
@@ -186,7 +186,7 @@ void setup()
   oled.println();
   oled.println(F("     Dragoon v1.5"));
   oled.println();
-  oled.println(F("      07-06-22"));
+  oled.println(F("      09-29-22"));
   oled.display();
   delay(2000);
   oled.clearDisplay();
@@ -545,8 +545,8 @@ void updateLCD(void)
       // We are updating the display faster than sensor reading
       if (timerSeconds > timerUpdate)
       {
-        // Store temperature reading every 3 s
-        if ((timerSeconds % 5) == 0)
+        // Store temperature reading every xxxx s
+        if ((timerSeconds % 7) == 0)
         {
           timerUpdate = timerSeconds;
           unsigned char averageReading = map(ovenTemp, 0, 250, 63, 19);
